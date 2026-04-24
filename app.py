@@ -1,10 +1,9 @@
 import streamlit as st
 import os
-import subprocess
 import tempfile
-from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip, TextClip
-import edge_tts
 import asyncio
+from moviepy import ImageClip, AudioFileClip, CompositeVideoClip, TextClip
+import edge_tts
 
 # ========== PAGE CONFIG ==========
 st.set_page_config(
@@ -41,13 +40,8 @@ st.markdown("Create a professional talking‑head video of a **black man in a su
 default_script = """Hello, I'm the face of GlobalInternet.py. We build custom Python software, AI solutions, election systems, business dashboards, educational books, employee management software, hospital systems, and much more. From Haiti to the world – let’s build your project together. Visit our website today."""
 
 with st.form("video_form"):
-    # 1. Upload character image
     uploaded_image = st.file_uploader("📸 Upload cartoon character image (black man in suit, sitting at desk)", type=["png", "jpg", "jpeg"])
-    
-    # 2. Script
     script = st.text_area("📝 Script (what the character will say)", value=default_script, height=150)
-    
-    # 3. Voice selection (male)
     voice_options = {
         "Guy (English US)": "en-US-GuyNeural",
         "Davis (English US)": "en-US-DavisNeural",
@@ -55,13 +49,9 @@ with st.form("video_form"):
     }
     selected_voice = st.selectbox("🎙️ AI Voice", list(voice_options.keys()))
     voice_id = voice_options[selected_voice]
-    
-    # 4. Subtitles toggle
     add_subtitles = st.checkbox("✅ Add subtitles (burned into video)", value=True)
-    
     generate = st.form_submit_button("🎬 Generate Video")
 
-# Helper to run async edge_tts
 async def text_to_speech(text, voice, output_file):
     communicate = edge_tts.Communicate(text, voice)
     await communicate.save(output_file)
@@ -72,67 +62,48 @@ if generate:
     elif not script.strip():
         st.error("❌ Please write a script.")
     else:
-        with st.spinner("🎤 Generating AI voice..."):
-            # Save audio to temp file
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_audio:
-                audio_path = tmp_audio.name
-            # Run async TTS
-            asyncio.run(text_to_speech(script, voice_id, audio_path))
-            st.session_state.audio_path = audio_path
-            st.success("✅ Voice generated!")
+        # Save image to temp file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_img:
+            tmp_img.write(uploaded_image.getvalue())
+            image_path = tmp_img.name
         
+        # Generate audio
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_audio:
+            audio_path = tmp_audio.name
+        with st.spinner("🎤 Generating AI voice..."):
+            asyncio.run(text_to_speech(script, voice_id, audio_path))
+        st.success("✅ Voice generated!")
+        
+        # Create video
         with st.spinner("🎬 Creating video (this may take a moment)..."):
-            # Save uploaded image to temp file
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_img:
-                tmp_img.write(uploaded_image.getvalue())
-                image_path = tmp_img.name
-            
-            # Load audio to get duration
             audio_clip = AudioFileClip(audio_path)
             duration = audio_clip.duration
+            # Image clip: resize to height 720, maintain aspect ratio
+            img_clip = ImageClip(image_path).resized(height=720).with_duration(duration).with_audio(audio_clip)
             
-            # Create image clip
-            image_clip = ImageClip(image_path, duration=duration).resize(height=720)
-            
-            # Center image (if wider than height, fit width)
-            image_clip = image_clip.resize(height=720)
-            image_clip = image_clip.set_audio(audio_clip)
-            
-            # Optional subtitles
             if add_subtitles:
-                # Split script into chunks (simple by sentences)
-                sentences = script.replace('.', '.\n').split('\n')
-                subtitles = []
-                # Rough timing – we'll use a simple per‑word timing or fixed duration per char.
-                # For simplicity, we'll use TextClip with a fixed position at bottom.
-                # Better: create a single subtitle track that shows whole text? Not ideal.
-                # Instead, we'll use a single text clip that scrolls? Let's keep simple: no subtitles for now.
-                # But we can add a generic "captions" overlay. I'll implement a simple caption at bottom center.
-                txt_clip = TextClip(script, fontsize=24, color='white', font='Arial', stroke_color='black', stroke_width=1)
-                txt_clip = txt_clip.set_position(('center', 'bottom')).set_duration(duration)
-                final = CompositeVideoClip([image_clip, txt_clip])
+                # Simple subtitle at bottom center
+                txt_clip = TextClip(text=script, font_size=24, color='white', font='Arial', stroke_color='black', stroke_width=1)
+                txt_clip = txt_clip.with_position(('center', 'bottom')).with_duration(duration)
+                final_clip = CompositeVideoClip([img_clip, txt_clip])
             else:
-                final = image_clip
+                final_clip = img_clip
             
-            # Write video to temp file
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_video:
                 video_path = tmp_video.name
-            final.write_videofile(video_path, fps=24, codec='libx264', audio_codec='aac')
+            final_clip.write_videofile(video_path, fps=24, codec='libx264', audio_codec='aac', logger=None)
+            
+            # Cleanup temp files
+            os.unlink(audio_path)
+            os.unlink(image_path)
             
             st.session_state.video_path = video_path
             st.success("🎉 Video created successfully!")
             
-            # Cleanup temp files (optional)
-            os.unlink(audio_path)
-            os.unlink(image_path)
-        
-        # Display video
-        st.video(st.session_state.video_path)
-        
-        # Download button
-        with open(st.session_state.video_path, "rb") as f:
-            st.download_button("📥 Download Video", f, file_name="globalinternet_promo.mp4", mime="video/mp4")
+            # Display and download
+            st.video(video_path)
+            with open(video_path, "rb") as f:
+                st.download_button("📥 Download Video", f, file_name="globalinternet_promo.mp4", mime="video/mp4")
 
-# Footer
 st.markdown("---")
 st.caption("⚡ Powered by edge-tts (Microsoft Neural Voices) and MoviePy. Built by Gesner Deslandes for GlobalInternet.py.")
