@@ -42,7 +42,7 @@ def tts_sync(text, voice, out_file):
 def run_replicate_wav2lip(image_path, audio_path, api_token):
     os.environ["REPLICATE_API_TOKEN"] = api_token
     try:
-        # Using a known stable Wav2Lip model on Replicate
+        # Using a stable, public Wav2Lip model (sahil2801/wav2lip)
         output = replicate.run(
             "sahil2801/wav2lip:28a3059e717f1f7c3a4c6b9e5d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e",
             input={
@@ -50,7 +50,6 @@ def run_replicate_wav2lip(image_path, audio_path, api_token):
                 "audio": open(audio_path, "rb")
             }
         )
-        # Output is usually a URL or list of URLs
         if isinstance(output, list):
             return output[0]
         return output
@@ -73,12 +72,10 @@ if generate:
         st.error("❌ Please upload a photo.")
         st.stop()
     
-    # Save uploaded image
     with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_img:
         tmp_img.write(uploaded_image.getvalue())
         image_path = tmp_img.name
-    
-    # Get audio
+
     if use_uploaded_audio and uploaded_audio:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_audio:
             tmp_audio.write(uploaded_audio.getvalue())
@@ -93,23 +90,21 @@ if generate:
                 audio_path = tmp_audio.name
             tts_sync(script, voice_options[selected_voice], audio_path)
         st.success("✅ Voice generated!")
-    
-    # Process via Replicate
+
     api_token = st.secrets.get("REPLICATE_API_TOKEN")
     if not api_token:
         st.error("❌ Replicate API token not found. Please add it to your Streamlit secrets.")
         st.stop()
-    
+
     with st.spinner("🎬 Sending to AI cloud for lip‑syncing (usually 20-60 seconds)..."):
         video_url = run_replicate_wav2lip(image_path, audio_path, api_token)
-    
-    # Clean up temp files
+
     try:
         os.unlink(image_path)
         os.unlink(audio_path)
     except:
         pass
-    
+
     if video_url:
         st.success("🎉 Video ready!")
         st.video(video_url)
