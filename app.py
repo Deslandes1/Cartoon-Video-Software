@@ -4,7 +4,6 @@ import tempfile
 import asyncio
 import replicate
 import edge_tts
-from datetime import datetime
 
 # ========== PAGE CONFIG ==========
 st.set_page_config(
@@ -33,10 +32,8 @@ st.sidebar.markdown("**Powered by Replicate + Wav2Lip**")
 st.title("🎬 Cartoon Video Software")
 st.markdown("Turn any photo into a talking video – perfect for your **GlobalInternet.py** spokesperson.")
 
-# Default script
 default_script = """Hello, I'm the face of GlobalInternet.py. We build custom Python software, AI solutions, election systems, business dashboards, educational books, employee management software, hospital systems, and much more. From Haiti to the world – let's build your project together. Visit our website today."""
 
-# Voice options (male, clear)
 voice_options = {
     "Guy (English US)": "en-US-GuyNeural",
     "Davis (English US)": "en-US-DavisNeural",
@@ -44,13 +41,14 @@ voice_options = {
 }
 
 # ========== Helper Functions ==========
-async def text_to_speech(text, voice, output_file):
-    """Generate MP3 from text using Microsoft Edge TTS."""
+async def text_to_speech_async(text, voice, output_file):
     communicate = edge_tts.Communicate(text, voice)
     await communicate.save(output_file)
 
+def text_to_speech_sync(text, voice, output_file):
+    asyncio.run(text_to_speech_async(text, voice, output_file))
+
 def run_replicate_wav2lip(image_path, audio_path, api_token):
-    """Call Replicate's Wav2Lip model to lip‑sync image and audio."""
     os.environ["REPLICATE_API_TOKEN"] = api_token
     try:
         output = replicate.run(
@@ -69,7 +67,6 @@ def run_replicate_wav2lip(image_path, audio_path, api_token):
                 "resize_factor": 1
             }
         )
-        # The output is a URL to the generated video
         return output
     except Exception as e:
         st.error(f"Replicate API error: {e}")
@@ -91,7 +88,7 @@ if generate:
         st.error("❌ Please upload a photo.")
         st.stop()
     
-    # Create temporary files
+    # Save uploaded image
     with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_img:
         tmp_img.write(uploaded_image.getvalue())
         image_path = tmp_img.name
@@ -109,7 +106,7 @@ if generate:
         with st.spinner("🎤 Generating AI voice..."):
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_audio:
                 audio_path = tmp_audio.name
-            await text_to_speech(script, voice_options[selected_voice], audio_path)
+            text_to_speech_sync(script, voice_options[selected_voice], audio_path)
         st.success("✅ Voice generated!")
     
     # Process via Replicate
@@ -129,8 +126,6 @@ if generate:
         st.success("🎉 Video ready!")
         st.video(video_url)
         st.markdown(f"[📥 Download Video]({video_url})", unsafe_allow_html=True)
-        
-        # Optional: also provide a direct download link via requests
         st.info("Right‑click on the video above and choose 'Save video as...' to download.")
     else:
         st.error("❌ Video generation failed. Check your API token or try again later.")
