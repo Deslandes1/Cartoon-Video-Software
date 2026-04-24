@@ -2,8 +2,9 @@ import streamlit as st
 import os
 import tempfile
 import asyncio
-from moviepy import ImageClip, AudioFileClip
+import replicate
 import edge_tts
+from datetime import datetime
 
 # ========== PAGE CONFIG ==========
 st.set_page_config(
@@ -11,10 +12,6 @@ st.set_page_config(
     page_icon="🎬",
     layout="centered"
 )
-
-# ========== SESSION STATE ==========
-if "video_path" not in st.session_state:
-    st.session_state.video_path = None
 
 # ========== SIDEBAR INFO ==========
 st.sidebar.image("https://img.icons8.com/color/96/null/video-call--v1.png", width=80)
@@ -24,69 +21,119 @@ st.sidebar.markdown("📞 (509) 4738-5663")
 st.sidebar.markdown("✉️ deslandes78@gmail.com")
 st.sidebar.markdown("🌐 [GlobalInternet.py](https://globalinternetsitepy-abh7v6tnmskxxnuplrdcgk.streamlit.app/)")
 st.sidebar.markdown("---")
-st.sidebar.markdown("**How it works:**")
-st.sidebar.markdown("1️⃣ Upload a cartoon character image (man in suit, sitting at desk).")
-st.sidebar.markdown("2️⃣ Write or paste a script.")
-st.sidebar.markdown("3️⃣ Generate AI voice (male, calm).")
-st.sidebar.markdown("4️⃣ Download video with image + audio.")
+st.sidebar.markdown("### ⚡ How it works")
+st.sidebar.markdown("1️⃣ Upload a photo (real person or cartoon).")
+st.sidebar.markdown("2️⃣ Write a script or upload audio.")
+st.sidebar.markdown("3️⃣ Generate AI voice (male).")
+st.sidebar.markdown("4️⃣ Our cloud AI lip‑syncs the photo to the voice.")
+st.sidebar.markdown("5️⃣ Download the final MP4 video.")
+st.sidebar.markdown("---")
+st.sidebar.markdown("**Powered by Replicate + Wav2Lip**")
 
 st.title("🎬 Cartoon Video Software")
-st.markdown("Create a professional talking‑head video of a **black man in a suit** introducing **GlobalInternet.py**.")
+st.markdown("Turn any photo into a talking video – perfect for your **GlobalInternet.py** spokesperson.")
 
-default_script = """Hello, I'm the face of GlobalInternet.py. We build custom Python software, AI solutions, election systems, business dashboards, educational books, employee management software, hospital systems, and much more. From Haiti to the world – let’s build your project together. Visit our website today."""
+# Default script
+default_script = """Hello, I'm the face of GlobalInternet.py. We build custom Python software, AI solutions, election systems, business dashboards, educational books, employee management software, hospital systems, and much more. From Haiti to the world – let's build your project together. Visit our website today."""
 
-with st.form("video_form"):
-    uploaded_image = st.file_uploader("📸 Upload cartoon character image", type=["png", "jpg", "jpeg"])
-    script = st.text_area("📝 Script", value=default_script, height=150)
-    voice_options = {
-        "Guy (English US)": "en-US-GuyNeural",
-        "Davis (English US)": "en-US-DavisNeural",
-        "Christopher (English US)": "en-US-ChristopherNeural"
-    }
-    selected_voice = st.selectbox("🎙️ AI Voice", list(voice_options.keys()))
-    voice_id = voice_options[selected_voice]
-    generate = st.form_submit_button("🎬 Generate Video")
+# Voice options (male, clear)
+voice_options = {
+    "Guy (English US)": "en-US-GuyNeural",
+    "Davis (English US)": "en-US-DavisNeural",
+    "Christopher (English US)": "en-US-ChristopherNeural"
+}
 
+# ========== Helper Functions ==========
 async def text_to_speech(text, voice, output_file):
+    """Generate MP3 from text using Microsoft Edge TTS."""
     communicate = edge_tts.Communicate(text, voice)
     await communicate.save(output_file)
 
+def run_replicate_wav2lip(image_path, audio_path, api_token):
+    """Call Replicate's Wav2Lip model to lip‑sync image and audio."""
+    os.environ["REPLICATE_API_TOKEN"] = api_token
+    try:
+        output = replicate.run(
+            "ckpt/wav2lip:bc7c2c0a0a6e87c9dea0ab6f4b4a6d0a6f0a7e6f0a5d5f0a9a6a0f0d5a5a4c3",
+            input={
+                "face": open(image_path, "rb"),
+                "audio": open(audio_path, "rb"),
+                "fps": 25,
+                "pads": [0, 10, 0, 0],
+                "nosync": False,
+                "static": False,
+                "face_det_batch_size": 1,
+                "wav2lip_batch_size": 1,
+                "face_enhancement": False,
+                "smoothing": True,
+                "resize_factor": 1
+            }
+        )
+        # The output is a URL to the generated video
+        return output
+    except Exception as e:
+        st.error(f"Replicate API error: {e}")
+        return None
+
+# ========== MAIN INTERFACE ==========
+with st.form("video_form"):
+    uploaded_image = st.file_uploader("📸 Upload photo (PNG or JPG)", type=["png", "jpg", "jpeg"])
+    script = st.text_area("📝 Script (what the character will say)", value=default_script, height=150)
+    use_uploaded_audio = st.checkbox("📁 Use your own audio file instead of script?")
+    uploaded_audio = None
+    if use_uploaded_audio:
+        uploaded_audio = st.file_uploader("🎵 Upload audio (MP3 or WAV)", type=["mp3", "wav"])
+    selected_voice = st.selectbox("🎙️ AI Voice (if generating from script)", list(voice_options.keys()))
+    generate = st.form_submit_button("🎬 Generate Video", type="primary")
+
 if generate:
     if not uploaded_image:
-        st.error("❌ Please upload a cartoon character image.")
-    elif not script.strip():
-        st.error("❌ Please write a script.")
-    else:
-        # Save image
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_img:
-            tmp_img.write(uploaded_image.getvalue())
-            image_path = tmp_img.name
-        
-        # Generate audio
+        st.error("❌ Please upload a photo.")
+        st.stop()
+    
+    # Create temporary files
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_img:
+        tmp_img.write(uploaded_image.getvalue())
+        image_path = tmp_img.name
+    
+    # Get audio
+    if use_uploaded_audio and uploaded_audio:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_audio:
+            tmp_audio.write(uploaded_audio.getvalue())
             audio_path = tmp_audio.name
+        st.info("🎵 Using your uploaded audio.")
+    else:
+        if not script.strip():
+            st.error("❌ Please write a script or upload audio.")
+            st.stop()
         with st.spinner("🎤 Generating AI voice..."):
-            asyncio.run(text_to_speech(script, voice_id, audio_path))
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_audio:
+                audio_path = tmp_audio.name
+            await text_to_speech(script, voice_options[selected_voice], audio_path)
         st.success("✅ Voice generated!")
+    
+    # Process via Replicate
+    api_token = st.secrets.get("REPLICATE_API_TOKEN", None)
+    if not api_token:
+        st.error("❌ Replicate API token not found. Please add it to .streamlit/secrets.toml")
+        st.stop()
+    
+    with st.spinner("🎬 Sending to AI cloud for lip‑syncing (usually 20-40 seconds)..."):
+        video_url = run_replicate_wav2lip(image_path, audio_path, api_token)
+    
+    # Clean up temp files
+    os.unlink(image_path)
+    os.unlink(audio_path)
+    
+    if video_url:
+        st.success("🎉 Video ready!")
+        st.video(video_url)
+        st.markdown(f"[📥 Download Video]({video_url})", unsafe_allow_html=True)
         
-        # Create video
-        with st.spinner("🎬 Creating video..."):
-            audio_clip = AudioFileClip(audio_path)
-            duration = audio_clip.duration
-            img_clip = ImageClip(image_path).resized(height=720).with_duration(duration).with_audio(audio_clip)
-            
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_video:
-                video_path = tmp_video.name
-            img_clip.write_videofile(video_path, fps=24, codec='libx264', audio_codec='aac', logger=None, threads=2)
-            
-            os.unlink(audio_path)
-            os.unlink(image_path)
-            
-            st.session_state.video_path = video_path
-            st.success("🎉 Video created successfully!")
-            st.video(video_path)
-            with open(video_path, "rb") as f:
-                st.download_button("📥 Download Video", f, file_name="globalinternet_promo.mp4", mime="video/mp4")
+        # Optional: also provide a direct download link via requests
+        st.info("Right‑click on the video above and choose 'Save video as...' to download.")
+    else:
+        st.error("❌ Video generation failed. Check your API token or try again later.")
 
 st.markdown("---")
-st.caption("⚡ Powered by edge-tts and MoviePy. Built by Gesner Deslandes for GlobalInternet.py.")
+st.caption("⚡ Powered by Microsoft Edge TTS and Replicate's Wav2Lip. Built by Gesner Deslandes for GlobalInternet.py.")
