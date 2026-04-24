@@ -5,14 +5,8 @@ import asyncio
 import replicate
 import edge_tts
 
-# ========== PAGE CONFIG ==========
-st.set_page_config(
-    page_title="Cartoon Video Software - GlobalInternet.py",
-    page_icon="🎬",
-    layout="centered"
-)
+st.set_page_config(page_title="Cartoon Video Software - GlobalInternet.py", page_icon="🎬", layout="centered")
 
-# ========== SIDEBAR INFO ==========
 st.sidebar.image("https://img.icons8.com/color/96/null/video-call--v1.png", width=80)
 st.sidebar.markdown("### 🎬 Cartoon Video Software")
 st.sidebar.markdown("**Built by Gesner Deslandes**")
@@ -20,14 +14,12 @@ st.sidebar.markdown("📞 (509) 4738-5663")
 st.sidebar.markdown("✉️ deslandes78@gmail.com")
 st.sidebar.markdown("🌐 [GlobalInternet.py](https://globalinternetsitepy-abh7v6tnmskxxnuplrdcgk.streamlit.app/)")
 st.sidebar.markdown("---")
-st.sidebar.markdown("### ⚡ How it works")
-st.sidebar.markdown("1️⃣ Upload a photo (real person or cartoon).")
-st.sidebar.markdown("2️⃣ Write a script or upload audio.")
-st.sidebar.markdown("3️⃣ Generate AI voice (male).")
-st.sidebar.markdown("4️⃣ Our cloud AI lip‑syncs the photo to the voice.")
-st.sidebar.markdown("5️⃣ Download the final MP4 video.")
-st.sidebar.markdown("---")
-st.sidebar.markdown("**Powered by Replicate + Wav2Lip**")
+st.sidebar.markdown("**How it works**")
+st.sidebar.markdown("1. Upload a photo (real or cartoon).")
+st.sidebar.markdown("2. Write a script or upload audio.")
+st.sidebar.markdown("3. Generate AI voice (male).")
+st.sidebar.markdown("4. AI lip‑syncs the photo to the voice.")
+st.sidebar.markdown("5. Download the MP4 video.")
 
 st.title("🎬 Cartoon Video Software")
 st.markdown("Turn any photo into a talking video – perfect for your **GlobalInternet.py** spokesperson.")
@@ -40,45 +32,32 @@ voice_options = {
     "Christopher (English US)": "en-US-ChristopherNeural"
 }
 
-# ========== Helper Functions ==========
-async def text_to_speech_async(text, voice, output_file):
+async def tts_async(text, voice, out_file):
     communicate = edge_tts.Communicate(text, voice)
-    await communicate.save(output_file)
+    await communicate.save(out_file)
 
-def text_to_speech_sync(text, voice, output_file):
-    asyncio.run(text_to_speech_async(text, voice, output_file))
+def tts_sync(text, voice, out_file):
+    asyncio.run(tts_async(text, voice, out_file))
 
-# ========== Replicate Wav2Lip using a known working model ==========
 def run_replicate_wav2lip(image_path, audio_path, api_token):
     os.environ["REPLICATE_API_TOKEN"] = api_token
     try:
-        # Using a stable, public Wav2Lip model on Replicate
-        # Model: sahil2801/wav2lip (version from March 2025)
+        # Using a known stable Wav2Lip model on Replicate
         output = replicate.run(
             "sahil2801/wav2lip:28a3059e717f1f7c3a4c6b9e5d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e",
             input={
                 "face": open(image_path, "rb"),
-                "audio": open(audio_path, "rb"),
-                "fps": 25,
-                "pads": [0, 10, 0, 0],
-                "nosync": False,
-                "static": False,
-                "face_det_batch_size": 1,
-                "wav2lip_batch_size": 1,
-                "face_enhancement": False,
-                "smoothing": True,
-                "resize_factor": 1
+                "audio": open(audio_path, "rb")
             }
         )
-        # Output is a URL string
+        # Output is usually a URL or list of URLs
         if isinstance(output, list):
-            return output[0]  # sometimes returns list of URLs
+            return output[0]
         return output
     except Exception as e:
         st.error(f"Replicate API error: {e}")
         return None
 
-# ========== MAIN INTERFACE ==========
 with st.form("video_form"):
     uploaded_image = st.file_uploader("📸 Upload photo (PNG or JPG)", type=["png", "jpg", "jpeg"])
     script = st.text_area("📝 Script (what the character will say)", value=default_script, height=150)
@@ -112,11 +91,11 @@ if generate:
         with st.spinner("🎤 Generating AI voice..."):
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_audio:
                 audio_path = tmp_audio.name
-            text_to_speech_sync(script, voice_options[selected_voice], audio_path)
+            tts_sync(script, voice_options[selected_voice], audio_path)
         st.success("✅ Voice generated!")
     
     # Process via Replicate
-    api_token = st.secrets.get("REPLICATE_API_TOKEN", None)
+    api_token = st.secrets.get("REPLICATE_API_TOKEN")
     if not api_token:
         st.error("❌ Replicate API token not found. Please add it to your Streamlit secrets.")
         st.stop()
