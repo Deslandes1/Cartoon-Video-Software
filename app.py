@@ -36,7 +36,6 @@ st.sidebar.markdown("4️⃣ Download video with image + audio + subtitles.")
 st.title("🎬 Cartoon Video Software")
 st.markdown("Create a professional talking‑head video of a **black man in a suit** introducing **GlobalInternet.py**.")
 
-# Default script (can be edited)
 default_script = """Hello, I'm the face of GlobalInternet.py. We build custom Python software, AI solutions, election systems, business dashboards, educational books, employee management software, hospital systems, and much more. From Haiti to the world – let’s build your project together. Visit our website today."""
 
 with st.form("video_form"):
@@ -78,13 +77,28 @@ if generate:
         with st.spinner("🎬 Creating video (this may take a moment)..."):
             audio_clip = AudioFileClip(audio_path)
             duration = audio_clip.duration
+            
             # Image clip: resize to height 720, maintain aspect ratio
             img_clip = ImageClip(image_path).resized(height=720).with_duration(duration).with_audio(audio_clip)
             
             if add_subtitles:
-                # Simple subtitle at bottom center
-                txt_clip = TextClip(text=script, font_size=24, color='white', font='Arial', stroke_color='black', stroke_width=1)
-                txt_clip = txt_clip.with_position(('center', 'bottom')).with_duration(duration)
+                # Get image dimensions to size the text clip
+                img_width = img_clip.w
+                img_height = img_clip.h
+                
+                # Create a subtitle clip that spans the video
+                # Use method='label' for simple text (does not require external font)
+                txt_clip = TextClip(
+                    text=script,
+                    font_size=24,
+                    color='white',
+                    stroke_color='black',
+                    stroke_width=1,
+                    method='label',
+                    size=(img_width, None)  # width matches video, height auto
+                )
+                # Position at bottom center
+                txt_clip = txt_clip.with_position(('center', img_height - txt_clip.h - 20)).with_duration(duration)
                 final_clip = CompositeVideoClip([img_clip, txt_clip])
             else:
                 final_clip = img_clip
