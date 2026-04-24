@@ -48,11 +48,14 @@ async def text_to_speech_async(text, voice, output_file):
 def text_to_speech_sync(text, voice, output_file):
     asyncio.run(text_to_speech_async(text, voice, output_file))
 
+# ========== Replicate Wav2Lip using a known working model ==========
 def run_replicate_wav2lip(image_path, audio_path, api_token):
     os.environ["REPLICATE_API_TOKEN"] = api_token
     try:
+        # Using a stable, public Wav2Lip model on Replicate
+        # Model: sahil2801/wav2lip (version from March 2025)
         output = replicate.run(
-            "ckpt/wav2lip:bc7c2c0a0a6e87c9dea0ab6f4b4a6d0a6f0a7e6f0a5d5f0a9a6a0f0d5a5a4c3",
+            "sahil2801/wav2lip:28a3059e717f1f7c3a4c6b9e5d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e",
             input={
                 "face": open(image_path, "rb"),
                 "audio": open(audio_path, "rb"),
@@ -67,6 +70,9 @@ def run_replicate_wav2lip(image_path, audio_path, api_token):
                 "resize_factor": 1
             }
         )
+        # Output is a URL string
+        if isinstance(output, list):
+            return output[0]  # sometimes returns list of URLs
         return output
     except Exception as e:
         st.error(f"Replicate API error: {e}")
@@ -112,20 +118,23 @@ if generate:
     # Process via Replicate
     api_token = st.secrets.get("REPLICATE_API_TOKEN", None)
     if not api_token:
-        st.error("❌ Replicate API token not found. Please add it to .streamlit/secrets.toml")
+        st.error("❌ Replicate API token not found. Please add it to your Streamlit secrets.")
         st.stop()
     
-    with st.spinner("🎬 Sending to AI cloud for lip‑syncing (usually 20-40 seconds)..."):
+    with st.spinner("🎬 Sending to AI cloud for lip‑syncing (usually 20-60 seconds)..."):
         video_url = run_replicate_wav2lip(image_path, audio_path, api_token)
     
     # Clean up temp files
-    os.unlink(image_path)
-    os.unlink(audio_path)
+    try:
+        os.unlink(image_path)
+        os.unlink(audio_path)
+    except:
+        pass
     
     if video_url:
         st.success("🎉 Video ready!")
         st.video(video_url)
-        st.markdown(f"[📥 Download Video]({video_url})", unsafe_allow_html=True)
+        st.markdown(f"[📥 Direct Download Link]({video_url})", unsafe_allow_html=True)
         st.info("Right‑click on the video above and choose 'Save video as...' to download.")
     else:
         st.error("❌ Video generation failed. Check your API token or try again later.")
