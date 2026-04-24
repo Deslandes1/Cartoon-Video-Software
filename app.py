@@ -2,7 +2,7 @@ import streamlit as st
 import os
 import tempfile
 import asyncio
-from moviepy import ImageClip, AudioFileClip, CompositeVideoClip, TextClip
+from moviepy import ImageClip, AudioFileClip
 import edge_tts
 
 # ========== PAGE CONFIG ==========
@@ -15,8 +15,6 @@ st.set_page_config(
 # ========== SESSION STATE ==========
 if "video_path" not in st.session_state:
     st.session_state.video_path = None
-if "audio_path" not in st.session_state:
-    st.session_state.audio_path = None
 
 # ========== SIDEBAR INFO ==========
 st.sidebar.image("https://img.icons8.com/color/96/null/video-call--v1.png", width=80)
@@ -30,9 +28,8 @@ st.sidebar.markdown("**How it works:**")
 st.sidebar.markdown("1️⃣ Upload a cartoon character image (man in suit, sitting at desk).")
 st.sidebar.markdown("2️⃣ Write or paste a script.")
 st.sidebar.markdown("3️⃣ Generate AI voice (male, calm).")
-st.sidebar.markdown("4️⃣ Download video with image + audio + subtitles.")
+st.sidebar.markdown("4️⃣ Download video with image + audio.")
 
-# ========== MAIN INTERFACE ==========
 st.title("🎬 Cartoon Video Software")
 st.markdown("Create a professional talking‑head video of a **black man in a suit** introducing **GlobalInternet.py**.")
 
@@ -48,7 +45,6 @@ with st.form("video_form"):
     }
     selected_voice = st.selectbox("🎙️ AI Voice", list(voice_options.keys()))
     voice_id = voice_options[selected_voice]
-    add_subtitles = st.checkbox("✅ Add subtitles (burned into video)", value=True)
     generate = st.form_submit_button("🎬 Generate Video")
 
 async def text_to_speech(text, voice, output_file):
@@ -61,61 +57,43 @@ if generate:
     elif not script.strip():
         st.error("❌ Please write a script.")
     else:
-        # Save image to temp file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_img:
-            tmp_img.write(uploaded_image.getvalue())
-            image_path = tmp_img.name
+        with st.spinner("🖼️ Processing image..."):
+            # Save uploaded image to temp file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_img:
+                tmp_img.write(uploaded_image.getvalue())
+                image_path = tmp_img.name
         
-        # Generate audio
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_audio:
-            audio_path = tmp_audio.name
         with st.spinner("🎤 Generating AI voice..."):
+            # Save audio to temp file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_audio:
+                audio_path = tmp_audio.name
             asyncio.run(text_to_speech(script, voice_id, audio_path))
         st.success("✅ Voice generated!")
         
-        # Create video
-        with st.spinner("🎬 Creating video (this may take a moment)..."):
+        with st.spinner("🎬 Creating video... this may take up to 30 seconds"):
+            # Load audio
             audio_clip = AudioFileClip(audio_path)
             duration = audio_clip.duration
             
-            # Image clip: resize to height 720, maintain aspect ratio
+            # Create image clip with same duration as audio
             img_clip = ImageClip(image_path).resized(height=720).with_duration(duration).with_audio(audio_clip)
             
-            if add_subtitles:
-                # Get image dimensions to size the text clip
-                img_width = img_clip.w
-                img_height = img_clip.h
-                
-                # Create a subtitle clip that spans the video
-                # Use method='label' for simple text (does not require external font)
-                txt_clip = TextClip(
-                    text=script,
-                    font_size=24,
-                    color='white',
-                    stroke_color='black',
-                    stroke_width=1,
-                    method='label',
-                    size=(img_width, None)  # width matches video, height auto
-                )
-                # Position at bottom center
-                txt_clip = txt_clip.with_position(('center', img_height - txt_clip.h - 20)).with_duration(duration)
-                final_clip = CompositeVideoClip([img_clip, txt_clip])
-            else:
-                final_clip = img_clip
-            
+            # Write video to temp file
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_video:
                 video_path = tmp_video.name
-            final_clip.write_videofile(video_path, fps=24, codec='libx264', audio_codec='aac', logger=None)
+            img_clip.write_videofile(video_path, fps=24, codec='libx264', audio_codec='aac', logger=None)
             
-            # Cleanup temp files
+            # Clean up temp files
             os.unlink(audio_path)
             os.unlink(image_path)
             
             st.session_state.video_path = video_path
             st.success("🎉 Video created successfully!")
             
-            # Display and download
+            # Display video
             st.video(video_path)
+            
+            # Download button
             with open(video_path, "rb") as f:
                 st.download_button("📥 Download Video", f, file_name="globalinternet_promo.mp4", mime="video/mp4")
 
